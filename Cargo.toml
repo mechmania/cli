@@ -10,8 +10,8 @@ chrono = "0.4.41"
 clap = { version = "4.5.47", features = ["derive"] }
 colored = "3.0.0"
 flate2 = "1.1.2"
-mm-engine = { path = "../engine", version = "0.1.0" }
-# mm-engine = { git = "https://github.com/mechmania/engine.git", version = "0.1.0" }
+# mm-engine = { path = "../engine", version = "0.1.0" }
+mm-engine = { git = "https://github.com/mechmania/engine.git", version = "0.1.0" }
 reqwest = { version = "0.12.23", features = ["json"] }
 rpassword = "7.4.0"
 serde = { version = "1.0.219", features = ["derive"] }

@@ -1,5 +1,8 @@
 use std::{io::{self, Write}, path::Path};
-use crate::{config::Config, login::authenticate, request::parse_response};
+use crate::{
+    config::Config, 
+    request::{authenticate, parse_response}
+};
 use colored::Colorize;
 
 use flate2::{Compression, write::GzEncoder};

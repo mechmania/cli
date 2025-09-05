@@ -1,7 +1,6 @@
 use anyhow::{bail, Context};
-use reqwest::RequestBuilder;
 use serde::{Deserialize, Serialize};
-use std::{fs, io::{self, Write}, path::Path};
+use std::io::{self, Write};
 
 use crate::{config::Config, request::parse_response};
 
@@ -14,17 +13,6 @@ struct LoginRequest {
 #[derive(Deserialize)]
 struct LoginResponse {
     token: String,
-}
-
-
-pub fn authenticate(root: &Path, req: RequestBuilder) -> anyhow::Result<RequestBuilder> {
-    let file = root.join(crate::JWT_NAME);
-
-    let content = fs::read_to_string(&file)
-        .with_context(|| format!("failed to read certificate in {}\n\n have you logged in?", file.display()))?;
-
-    let token = content.trim();
-    Ok(req.bearer_auth(token))
 }
 
 pub async fn login(conf: &Config) -> anyhow::Result<()> {
