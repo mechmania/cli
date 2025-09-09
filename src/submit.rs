@@ -86,7 +86,6 @@ pub async fn submit(root: &Path, config: &Config) -> anyhow::Result<()> {
     }
 
     let data = compress_folder(strategy_path)?;
-
     let encoded_data = general_purpose::STANDARD.encode(&*data);
     
     let client = Client::new();
@@ -107,7 +106,6 @@ pub async fn submit(root: &Path, config: &Config) -> anyhow::Result<()> {
     let submission_id = &submit_response.submission_id;
     
     println!("{}", "uploaded successfully and queued for submission".green());
-    
 
     let compilation: Option<CompilationResponse>;
 

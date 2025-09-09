@@ -71,17 +71,18 @@ async fn run() -> anyhow::Result<()> {
             let run_path = scripts_path.join(format!("run{}", extension));
 
             if !build_path.exists() {
-                bail!("unable to find bot file");
+                bail!("unable to find build file");
             }
 
             if !run_path.exists() {
-                bail!("unable to find bot file");
+                bail!("unable to find run file");
             }
 
             tokio::process::Command::new(build_path)
                 .output()
                 .await
                 .with_context(|| "failed to build bot")?;
+
 
             use mm_engine::args::{ OutputSource, OutputMapping };
             use chrono::Utc;
