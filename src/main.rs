@@ -2,6 +2,8 @@ mod config;
 mod request;
 mod login;
 mod submit;
+mod version;
+mod update;
 
 use std::{env, path::{Path, PathBuf}};
 use colored::Colorize;
@@ -20,6 +22,9 @@ pub const JWT_NAME: &str = ".mm-token";
 #[derive(Parser, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Cli {
+    /// do not check for updates
+    #[arg(long = "ignore-updates")]
+    no_updates: bool,
     #[command(subcommand)]
     command: Commands,
 }
@@ -34,6 +39,10 @@ pub enum Commands {
     Engine(args::ArgConfig),
     /// submit bot for tournaments
     Submit,
+    /// switch which bot version you would like to compete
+    Version(Version),
+    /// update mm-cli and starterpack
+    Update,
 }
 
 #[derive(Parser, Clone)]
@@ -44,6 +53,28 @@ pub struct Run {
     quiet: bool,
 }
 
+#[derive(Parser, Clone)]
+#[command(about = "")]
+pub struct Version {
+    #[command(subcommand)]
+    command: VersionCommands
+}
+
+#[derive(Subcommand, Clone)]
+pub enum VersionCommands {
+    List,
+    Switch(Switch)
+}
+
+
+#[derive(Parser, Clone)]
+#[command(about = "")]
+pub struct Switch { 
+    /// select version
+    #[arg(short = 'v', long = "version", value_parser = version::parse_version)]
+    version: Option<version::Version>,
+}
+
 async fn run() -> anyhow::Result<()> {
 
     let root = find_project_root()?;
@@ -51,9 +82,20 @@ async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let conf = config::read(&root)?;
 
+    if !cli.no_updates {
+        println!("checking for updates (use --ignore-updates to ignore)...");
+        update::check_all_updates(&root, &conf)
+            .await
+            .context("update check failed")?;
+    }
+
     match cli.command {
         Commands::Login => login::login(&conf).await?,
         Commands::Submit => submit::submit(&root, &conf).await?,
+        Commands::Version(version) => match version.command {
+            VersionCommands::List => version::list(&root, &conf).await?,
+            VersionCommands::Switch(v) => version::switch(v, &root, &conf).await?,
+        },
         Commands::Run(run) => {
 
             let scripts_path = root.join("scripts");
@@ -117,6 +159,7 @@ async fn run() -> anyhow::Result<()> {
                 .await
                 .with_context(|| "fatal engine error")?;
         },
+        Commands::Update => update::update_all(&root, &conf).await?
     }
 
     Ok(())
