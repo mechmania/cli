@@ -5,7 +5,7 @@ mod submit;
 mod version;
 mod update;
 
-use std::{env, path::{Path, PathBuf}};
+use std::{env, path::{Path, PathBuf}, process::Stdio};
 use colored::Colorize;
 
 use anyhow::{bail, Context};
@@ -15,8 +15,10 @@ use clap::{
     Subcommand
 };
 
+use crate::config::Lang;
+
 pub const CONFIG_NAME: &str = "mm-config.toml";
-pub const JWT_NAME: &str = ".mm-token";
+pub const JWT_NAME: &str = ".mm-token.txt";
 
 
 #[derive(Parser, Clone)]
@@ -75,28 +77,57 @@ pub struct Switch {
     version: Option<version::Version>,
 }
 
+fn strategy_path(config: &config::Config) -> PathBuf {
+    PathBuf::from(match config.language {
+        Lang::Rust => "src/strategy",
+        Lang::Python => "strategy",
+        Lang::Java => "src/com/bot/strategy",
+    })
+}
+
+fn abs_strategy_path(root: &Path, config: &config::Config) -> PathBuf {
+    let strategy_path = match config.language {
+        Lang::Rust => "src/strategy",
+        Lang::Python => "strategy",
+        Lang::Java => "src/com/bot/strategy",
+    };
+    root.join(strategy_path)
+}
+
 async fn run() -> anyhow::Result<()> {
 
-    let root = find_project_root()?;
+    // let root = find_project_root()?;
+    let root = find_project_root();
 
     let cli = Cli::parse();
-    let conf = config::read(&root)?;
+    // let conf = config::read(&root)?;
+    let conf = root
+        .as_ref()
+        .or_else(|_| Err(anyhow::anyhow!("could not read root")))
+        .and_then(|r| config::read(r));
 
-    if !cli.no_updates {
-        println!("checking for updates (use --ignore-updates to ignore)...");
-        update::check_all_updates(&root, &conf)
-            .await
-            .context("update check failed")?;
-    }
 
     match cli.command {
-        Commands::Login => login::login(&conf).await?,
-        Commands::Submit => submit::submit(&root, &conf).await?,
+        Commands::Login => login::login(&conf?).await?,
+        Commands::Submit => submit::submit(&root?, &conf?).await?,
         Commands::Version(version) => match version.command {
-            VersionCommands::List => version::list(&root, &conf).await?,
-            VersionCommands::Switch(v) => version::switch(v, &root, &conf).await?,
+            VersionCommands::List => version::list(&root?, &conf?).await?,
+            VersionCommands::Switch(v) => version::switch(v, &root?, &conf?).await?,
         },
         Commands::Run(run) => {
+
+            let root = root?;
+
+            if !cli.no_updates {
+                println!("checking for updates...");
+                let needs_update = update::check_all_updates(&root, &conf?)
+                    .await
+                    .context("update check failed")?;
+                if needs_update {
+                    println!("updates needed!\nplease run mm-cli update\nif you really wish to run the match, use --ignore-updates");
+                    return Ok(());
+                }
+            }
 
             let scripts_path = root.join("scripts");
             if !scripts_path.exists() {
@@ -120,7 +151,11 @@ async fn run() -> anyhow::Result<()> {
                 bail!("unable to find run file");
             }
 
+            println!("building bot...");
+
             tokio::process::Command::new(build_path)
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
                 .output()
                 .await
                 .with_context(|| "failed to build bot")?;
@@ -159,7 +194,7 @@ async fn run() -> anyhow::Result<()> {
                 .await
                 .with_context(|| "fatal engine error")?;
         },
-        Commands::Update => update::update_all(&root, &conf).await?
+        Commands::Update => update::update_all(&root?, &conf?).await?
     }
 
     Ok(())

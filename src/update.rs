@@ -1,28 +1,22 @@
-use std::{path::Path, process::Command};
+use std::{path::Path};
+use tokio::process::Command;
 use anyhow::{bail, Context, Result};
 use crate::config::Config;
 
 const CLI_REPO_URL: &str = "https://github.com/mechmania/cli";
 
-pub async fn check_all_updates(root: &Path, config: &Config) -> Result<()> {
+pub async fn check_all_updates(root: &Path, config: &Config) -> Result<bool> {
     let (cli_updates, starterpack_updates) = tokio::join!(
         has_cli_updates(),
-        async { has_upstream_changes(root, config) }
+        has_upstream_changes(root, config)
     );
-    
-    match (cli_updates?, starterpack_updates?) {
-        (true, true) => println!("Updates available for CLI and starterpack! Run with 'update' command"),
-        (true, false) => println!("CLI update available! Run with 'update' command"),
-        (false, true) => println!("Starterpack update available! Run with 'update' command"),
-        (false, false) => {} // Silent when up to date
-    }
-    Ok(())
+    Ok(cli_updates? || starterpack_updates?)
 }
 
 pub async fn update_all(root: &Path, config: &Config) -> Result<()> {
     let (cli_needs_update, starterpack_needs_update) = tokio::join!(
         has_cli_updates(),
-        async { has_upstream_changes(root, config) }
+        has_upstream_changes(root, config)
     );
 
     let (cli_needs_update, starterpack_needs_update) = (cli_needs_update?, starterpack_needs_update?);
@@ -32,7 +26,7 @@ pub async fn update_all(root: &Path, config: &Config) -> Result<()> {
     }
     
     if starterpack_needs_update {
-        update_starterpack(root, config)?;
+        update_starterpack(root, config).await?;
     }
     
     if !cli_needs_update && !starterpack_needs_update {
@@ -57,6 +51,7 @@ async fn get_remote_cli_hash() -> Result<String> {
     let output = Command::new("git")
         .args(["ls-remote", CLI_REPO_URL, "HEAD"])
         .output()
+        .await
         .context("Failed to check remote CLI version")?;
     
     if !output.status.success() {
@@ -80,26 +75,29 @@ async fn update_cli() -> Result<()> {
             "install", 
             "--git", 
             CLI_REPO_URL,
-            "--force"
         ])
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
         .output()
+        .await
         .context("Failed to update CLI")?;
     
     if !output.status.success() {
-        bail!("CLI update failed: {}", String::from_utf8_lossy(&output.stderr));
+        bail!("CLI update failed");
     }
     
     println!("CLI updated successfully");
     Ok(())
 }
 
-fn has_upstream_changes(root: &Path, config: &Config) -> Result<bool> {
-    add_upstream_remote(root, config)?;
+async fn has_upstream_changes(root: &Path, config: &Config) -> Result<bool> {
+    add_upstream_remote(root, config).await?;
     
     let output = Command::new("git")
         .args(["fetch", "upstream", "main"])
         .current_dir(root)
         .output()
+        .await
         .context("Failed to fetch upstream")?;
     
     if !output.status.success() {
@@ -110,6 +108,7 @@ fn has_upstream_changes(root: &Path, config: &Config) -> Result<bool> {
         .args(["rev-list", "--count", "HEAD..upstream/main"])
         .current_dir(root)
         .output()
+        .await
         .context("Failed to check for updates")?;
     
     if !output.status.success() {
@@ -123,32 +122,91 @@ fn has_upstream_changes(root: &Path, config: &Config) -> Result<bool> {
     Ok(count > 0)
 }
 
-fn update_starterpack(root: &Path, config: &Config) -> Result<()> {
+async fn update_starterpack(root: &Path, config: &Config) -> Result<()> {
     println!("Updating starterpack...");
     
-    preserve_strategy_files(root, config)?;
-    
+    let strategy_path = crate::strategy_path(config);
+    let strategy_path_str = strategy_path.to_string_lossy();
+
+    println!("restoring non-strategy files...");
+    // restore from upstream, excluding strategy
     let output = Command::new("git")
-        .args(["merge", "upstream/main", "--no-edit"])
+        .args([
+            "restore",
+            "--source=upstream/main",
+            "--",
+            ".",
+            &format!(":!{}", strategy_path_str),
+            &format!(":!{}/**", strategy_path_str),
+        ])
         .current_dir(root)
         .output()
-        .context("Failed to merge updates")?;
-        
+        .await
+        .context("Failed to run git restore")?;
+
     if !output.status.success() {
-        bail!("Git merge failed: {}", String::from_utf8_lossy(&output.stderr));
+        bail!("Git restore failed: {}", String::from_utf8_lossy(&output.stderr));
+    }
+
+    println!("stashing uncommitted changes in your code...");
+    // stash, this will stash strategy changes
+    
+    let output = Command::new("git")
+        .args([
+            "stash",
+        ])
+        .current_dir(root)
+        .output()
+        .await
+        .context("Failed to run git stash")?;
+
+    if !output.status.success() {
+        bail!("Git stash failed: {}", String::from_utf8_lossy(&output.stderr));
+    }
+
+    println!("applying upstream changes...");
+    // rebase
+    let output = Command::new("git")
+        .args([
+            "rebase",
+            "upstream/main",
+        ])
+        .current_dir(root)
+        .output()
+        .await
+        .context("Failed to run git rebase")?;
+
+    if !output.status.success() {
+        bail!("Git rebase failed: {}", String::from_utf8_lossy(&output.stderr));
+    }
+
+    println!("restoring your uncommitted changes...");
+    // stash pop
+    let output = Command::new("git")
+        .args([
+            "stash",
+            "pop",
+        ])
+        .current_dir(root)
+        .output()
+        .await
+        .context("Failed to run git stash pop")?;
+
+    if !output.status.success() {
+        bail!("Git stash pop failed: {}", String::from_utf8_lossy(&output.stderr));
     }
     
     println!("Starterpack updated successfully");
     Ok(())
 }
 
-fn add_upstream_remote(root: &Path, config: &Config) -> Result<()> {
+async fn add_upstream_remote(root: &Path, config: &Config) -> Result<()> {
     let repo_url = get_starterpack_url(config);
     
     Command::new("git")
         .args(["remote", "add", "upstream", repo_url])
         .current_dir(root)
-        .output()?;
+        .output().await?;
         
     Ok(())
 }
@@ -160,21 +218,4 @@ fn get_starterpack_url(config: &Config) -> &'static str {
         Lang::Python => "https://github.com/mechmania/python-starterpack",
         Lang::Java => "https://github.com/mechmania/java-starterpack",
     }
-}
-
-fn preserve_strategy_files(root: &Path, config: &Config) -> Result<()> {
-    use crate::config::Lang;
-    let strategy_dir = match config.language {
-        Lang::Rust => "src/strategy",
-        Lang::Python => "strategy",
-        Lang::Java => "src/com/bot/strategy",
-    };
-    
-    Command::new("git")
-        .args(["add", strategy_dir])
-        .current_dir(root)
-        .output()
-        .context("Failed to preserve strategy files")?;
-        
-    Ok(())
 }

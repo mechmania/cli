@@ -73,14 +73,8 @@ pub fn compress_folder(folder_path: impl AsRef<Path>) -> Result<Box<[u8]>> {
 }
 
 pub async fn submit(root: &Path, config: &Config) -> anyhow::Result<()> {
-    use crate::config::Lang;
-    let strategy_path = match config.language {
-        Lang::Rust => "src/strategy",
-        Lang::Python => "strategy",
-        Lang::Java => "src/com/bot/strategy",
-    };
 
-    let strategy_path = root.join(strategy_path);
+    let strategy_path = crate::abs_strategy_path(root, config);
     if !strategy_path.exists() {
         bail!("could not find strategy code: {} does not exist", strategy_path.display())
     }
