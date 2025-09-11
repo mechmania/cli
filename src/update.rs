@@ -70,7 +70,7 @@ async fn get_remote_cli_hash() -> Result<String> {
 async fn update_cli() -> Result<()> {
     println!("Updating CLI...");
     
-    let output = Command::new("cargo")
+    let status = Command::new("cargo")
         .args([
             "install", 
             "--git", 
@@ -78,11 +78,13 @@ async fn update_cli() -> Result<()> {
         ])
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
-        .output()
+        .spawn()
+        .context("failed to run cargo update")?
+        .wait()
         .await
         .context("Failed to update CLI")?;
     
-    if !output.status.success() {
+    if !status.success() {
         bail!("CLI update failed");
     }
     
