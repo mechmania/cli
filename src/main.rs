@@ -153,16 +153,24 @@ async fn run() -> anyhow::Result<()> {
 
             println!("building bot...");
 
-            tokio::process::Command::new(build_path)
+            let build_status = tokio::process::Command::new(build_path)
                 .stdout(Stdio::inherit())
                 .stderr(Stdio::inherit())
-                .output()
+                .spawn()
+                .with_context(|| "failed to spawn build script")?
+                .wait()
                 .await
-                .with_context(|| "failed to build bot")?;
+                .with_context(|| "failed to wait for build script")?;
 
+            if !build_status.success() {
+                bail!("build failed");
+            }
 
             use mm_engine::args::{ OutputSource, OutputMapping };
             use chrono::Utc;
+
+
+            let log_path = root.join("logs").join(format!("log-{}.mmgl", Utc::now().format("%Y%m%d_%H%M%S")));
 
             let engine_args = mm_engine::args::ArgConfig {
                 bot_a: run_path.clone(),
@@ -178,15 +186,16 @@ async fn run() -> anyhow::Result<()> {
                 output: Some(vec![
                     OutputMapping { 
                         sources: vec![ OutputSource::Gamelog ], 
-                        path: root.join("logs").join(format!("log-{}.mmgl", Utc::now().format("%Y%m%d_%H%M%S")))
+                        path: log_path.clone(),
                     },
                 ]),
             };
 
-
             mm_engine::engine::run(engine_args)
                 .await
                 .with_context(|| "fatal engine error")?;
+
+            println!("run successful!, gamelog outputted to {}", log_path.display());
         },
         Commands::Engine(arg_config) => {
             println!("engine ArgConfig: {:#?}", arg_config);
