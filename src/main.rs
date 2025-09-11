@@ -124,7 +124,7 @@ async fn run() -> anyhow::Result<()> {
                     .await
                     .context("update check failed")?;
                 if needs_update {
-                    println!("updates needed!\nplease run mm-cli update\nif you really wish to run the match, use --ignore-updates");
+                    println!("updates needed!\nplease run {}\nif you really wish to run the match, use {}", "mm-cli update".bold(), "--ignore-updates".green());
                     return Ok(());
                 }
             }
