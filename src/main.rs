@@ -191,6 +191,8 @@ async fn run() -> anyhow::Result<()> {
                 ]),
             };
 
+            println!("running match...");
+
             mm_engine::engine::run(engine_args)
                 .await
                 .with_context(|| "fatal engine error")?;
@@ -199,6 +201,7 @@ async fn run() -> anyhow::Result<()> {
         },
         Commands::Engine(arg_config) => {
             println!("engine ArgConfig: {:#?}", arg_config);
+            println!("running match...");
             mm_engine::engine::run(arg_config)
                 .await
                 .with_context(|| "fatal engine error")?;

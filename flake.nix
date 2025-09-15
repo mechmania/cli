@@ -26,6 +26,9 @@
             pkg-config
             openssl
           ];
+          shellHook = ''
+            export PATH="$HOME/.cargo/bin:$PATH"
+          '';
         };
       };
       flake = {
