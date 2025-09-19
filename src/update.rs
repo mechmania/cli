@@ -10,16 +10,22 @@ pub async fn check_all_updates(root: &Path, config: &Config) -> Result<bool> {
         has_cli_updates(),
         has_upstream_changes(root, config)
     );
-    Ok(cli_updates? || starterpack_updates?)
+
+    // Ok(cli_updates? || starterpack_updates?)
+    Ok(cli_updates?)
 }
 
 pub async fn update_all(root: &Path, config: &Config) -> Result<()> {
+
     let (cli_needs_update, starterpack_needs_update) = tokio::join!(
         has_cli_updates(),
         has_upstream_changes(root, config)
     );
 
-    let (cli_needs_update, starterpack_needs_update) = (cli_needs_update?, starterpack_needs_update?);
+    // let (cli_needs_update, starterpack_needs_update) = (cli_needs_update?, starterpack_needs_update?);
+    let (cli_needs_update, _starterpack_needs_update) = (cli_needs_update?, starterpack_needs_update?);
+
+    let starterpack_needs_update = false;
     
     if cli_needs_update {
         update_cli().await?;
